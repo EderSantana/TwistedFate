@@ -4,26 +4,15 @@ import numpy as np
 import input_data
 sess = tf.Session()  
 
-'''
-Classify MNIST using LSTM running row by row. 
-
-Good:
-* No compilation time at all, which is cool.
-
-Bad:
-* Problem is that has all dimensions hard coded, which sucks.
-
-Inspired by:
-https://github.com/nlintz/TensorFlow-Tutorials
-'''
-
 def init_weights(shape):
     return tf.Variable(tf.random_normal(shape, stddev=0.01))
      
 def get_lstm(num_steps, input_dim, hidden_dim, output_dim, batch_size):
     # Define input
-    input = tf.placeholder("float", [batch_size, num_steps, input_dim])
-    desired = tf.placeholder("float", [batch_size, 10])
+    #input = tf.placeholder("float", [batch_size, num_steps, input_dim])
+    input = tf.placeholder("float", [None, num_steps, input_dim])
+    initial_state = tf.placeholder("float", [None, 2*hidden_dim]) # 2x cause its LSTM: state+cell
+    desired = tf.placeholder("float", [None, 10])
     # Define parameters
     i2h = init_weights([input_dim, hidden_dim])
     h2o = init_weights([hidden_dim, output_dim])
@@ -34,7 +23,7 @@ def get_lstm(num_steps, input_dim, hidden_dim, output_dim, batch_size):
     # input shape: (batches, num_steps, input_dim)
     X2 = tf.transpose(input, [1, 0, 2])  # (num_steps, batch_size, input_dim)
     # tf.reshape does not accept X.get_shape elements as input :(
-    X3 = tf.reshape(X2, [num_steps*batch_size, dim]) # (num_steps*batch_size, input_dim)
+    X3 = tf.reshape(X2, [-1, dim]) # (num_steps*batch_size, input_dim)
     # project to hidden state dimension
     X4 = tf.matmul(X3, i2h) + bi # (num_steps*batch_size, hidden_dim)
 
@@ -48,7 +37,8 @@ def get_lstm(num_steps, input_dim, hidden_dim, output_dim, batch_size):
     # There are two ways of calculating the inner loop of an RNN
     with tf.variable_scope("RNN", reuse=None, initializer=initializer): # this is necessary
         lstm_cell = rnn_cell.BasicLSTMCell(hidden_dim, forget_bias=1.0)
-        initial_state = lstm_cell.zero_state(batch_size, tf.float32)
+        #initial_state = lstm_cell.zero_state(batch_size, tf.float32)
+        
         # Explicitly calling a for loop inside the scope
         #for time_step, input_ in enumerate(inputs):
         #    if time_step > 0: tf.get_variable_scope().reuse_variables()
@@ -64,8 +54,8 @@ def get_lstm(num_steps, input_dim, hidden_dim, output_dim, batch_size):
     Y = lstm_outputs[-1] # outputs is a list, we get the last value
     output = tf.matmul(Y, h2o) + bo
     
-    return input, output, desired
-
+    return input, output, desired, initial_state
+    
 ### EXPERIMENT STARTS HERE ###
 
 input_dim = 28
@@ -78,7 +68,7 @@ dim = 28
 mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
 trX, trY, teX, teY = mnist.train.images, mnist.train.labels, mnist.test.images, mnist.test.labels
 
-X, Y, T = get_lstm(num_steps, input_dim, hidden_dim, output_dim, batch_size)
+X, Y, T, S = get_lstm(num_steps, input_dim, hidden_dim, output_dim, batch_size)
 
 cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(Y, T)) # compute mean cross entropy (softmax is applied internally)
 train_op = tf.train.AdamOptimizer(0.001).minimize(cost) # construct optimizer
@@ -90,7 +80,10 @@ sess.run(init)
 for i in range(100):
     for start, end in zip(range(0, len(trX), batch_size), range(batch_size, len(trX), batch_size)):
         sess.run(train_op, feed_dict={X: trX[start:end].reshape((batch_size, num_steps, input_dim)),
-                                      T: trY[start:end]})
-    print i, np.mean(np.argmax(teY[:batch_size], axis=1) ==
-                     sess.run(predict_op, feed_dict={X: teX[:batch_size].reshape((batch_size, num_steps, input_dim)),
-                                                     T: teY[:batch_size]}))
+                                      T: trY[start:end],
+                                      S: np.zeros((batch_size, 2*hidden_dim))})
+    print i, np.mean(np.argmax(teY, axis=1) ==
+                     sess.run(predict_op, feed_dict={X: teX.reshape((-1, num_steps, input_dim)),
+                                                     T: teY,
+                                                     S:np.zeros((teX.shape[0], 2*hidden_dim))}))
+
