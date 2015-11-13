@@ -65,3 +65,32 @@ def get_lstm(num_steps, input_dim, hidden_dim, output_dim, batch_size):
     output = tf.matmul(Y, h2o) + bo
     
     return input, output, desired
+
+### EXPERIMENT STARTS HERE ###
+
+input_dim = 28
+hidden_dim = 100
+output_dim = 10
+batch_size = 100
+num_steps = 28
+dim = 28
+
+mnist = input_data.read_data_sets("MNIST_data/", one_hot=True)
+trX, trY, teX, teY = mnist.train.images, mnist.train.labels, mnist.test.images, mnist.test.labels
+
+X, Y, T = get_lstm(num_steps, input_dim, hidden_dim, output_dim, batch_size)
+
+cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(Y, T)) # compute mean cross entropy (softmax is applied internally)
+train_op = tf.train.AdamOptimizer(0.001).minimize(cost) # construct optimizer
+predict_op = tf.argmax(Y, 1) # at predict time, evaluate the argmax of the logistic regression
+
+init = tf.initialize_all_variables()
+sess.run(init)
+
+for i in range(100):
+    for start, end in zip(range(0, len(trX), batch_size), range(batch_size, len(trX), batch_size)):
+        sess.run(train_op, feed_dict={X: trX[start:end].reshape((batch_size, num_steps, input_dim)),
+                                      T: trY[start:end]})
+    print i, np.mean(np.argmax(teY[:batch_size], axis=1) ==
+                     sess.run(predict_op, feed_dict={X: teX[:batch_size].reshape((batch_size, num_steps, input_dim)),
+                                                     T: teY[:batch_size]}))
